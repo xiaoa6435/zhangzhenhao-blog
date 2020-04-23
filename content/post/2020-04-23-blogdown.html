@@ -1,0 +1,35 @@
+---
+title: 用blogdown搭建个人博客
+author: ''
+date: '2020-04-23'
+slug: blogdown-hugo-rmd
+categories:
+  - Other
+tags:
+  - Rmd
+---
+
+
+
+<p>最近准备搭博客，写些读书笔记和日常思考。由于日常的主力语言是R，输出以Rmd为主，需要考虑的问题是怎样渲染Rmd文件（huho、jekyll等只支持md）：blogdown就是为此设计的，它可以在hugo框架下渲染rmd文件，加上Rstudio, 基本上可以不用写代码就可以搭起来</p>
+<p>如果安装了blogdown包(instqll.package(‘blogdwon’)), 建个new_project, 然后在consale中调用blogdown::new_site()，个人网站就搭起来了。效果大概是这样: <img src="/post/2020-04-23-blogdown_files/rmd-img-paste-2020051019241589109840.png" /></p>
+<p>写东西的话，直接在Rstudio的Addins-&gt;new_post，会自动生成yaml头文件，其他的完全就是rmd了。</p>
+<p>我没有选默认的主题，改成了hugo-theme-minos，主要是默认主题头上有个图片，我不知道放什么，另外就是主页没有文章摘要。换主题只需要在new_site(theme = ‘carsonip/hugo-theme-minos’)就可以了。</p>
+<p>这个主题没有导航栏，直接在config.toml中加上以下：</p>
+<pre><code>[permalinks]
+    post = &quot;/:year/:month/:day/:slug/&quot;
+[[menu.main]]
+    name = &quot;Tags&quot;
+    url = &quot;/Tags/&quot;
+    weight = 1
+[[menu.main]]
+    name = &quot;Categories&quot;
+    url = &quot;/Categories/&quot;
+    weight = 2
+[[menu.main]]
+    name = &quot;About&quot;
+    url = &quot;/About/&quot;
+    weight = 3</code></pre>
+<p>about页面用来放简历，可以在md的头部加上hidden: true， 这样about页面就不会也出现在主页了</p>
+<p>这个主题有个小bug, 就是出现tag、categories时不能正常跳转（但导航栏那里可以）。看了下代码，应该时baseurl的问题，出现{{ $Site.BaseURL}}的地方，直接删掉。</p>
+<p>代码推送到github上，配置netlify, 博客就好了，具体可以参照<a href="https://bookdown.org/yihui/blogdown">谢益辉的博客</a>。另外的一个小问题是new_post的。Addins-&gt;new_post后，yaml中同时有Tags和tags, 后面的参数时默认的，文章上实际显示的也是后面的，去掉就正常了。</p>

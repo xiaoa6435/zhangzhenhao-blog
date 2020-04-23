@@ -1,0 +1,105 @@
+---
+title: '用ctrl+v在Rmd中插入图片-第一个PR'
+author: ''
+date: '2020-05-10'
+slug: Rmd-insert-image
+categories:
+  - Other
+tags:
+  - Rmd
+---
+
+Rmd是md的增强类型，可以很方便的和R整合，一个不太方便的点是插入外部图片：jupyter、typora等可以直接复制、或截图，然后粘贴，即可插入图片；在Rmd中，你首先需要把图片截取、保存再插入。在blogdown中要更复杂一些，图片需要放再static/下，插入的时候用/post开头路径。最近刷github,发现了imageclipr, 基本上可以实现这个功能，不过这个包依赖python, 准确说是依赖PIL，python 2.7下的，安装起来比较麻烦。看了源码，感觉实现起来应该不是很复杂，于是就有了人生中第一个PR、第一个R包。
+
+## 大概想法
+用ctrl/cmd + v在Rmd插入图片需要解决三个问题：
+
+- 从剪切板中读取图片，保存下来
+- 生成类似`![](image_path)`代码, 插入到文档当前位置
+- 把前面两部分和快捷键绑定起来
+
+后面两步是我之前觉得很难下手的地方，从imageclipr的代码看，这两部分反而是很简单的，rstudioapi已经标准化这部分，现在问题主要是第一步。
+
+## 怎样从剪切板读取图片？
+
+imageclipr是通过PIL.ImageGrab.grabclipboard实现的。在macOS上，这个函数通过subprocess执行下面的脚本实现的:
+```
+osascript -e "
+  set theFile to (open for access POSIX file 'test.png' with write permission)
+  try
+    write (the clipboard as «class PNGf») to theFile
+  end try
+  close access theFile"
+```
+
+这部分移到R上很容易，system或system2就可以。在windows上比较麻烦，是通过底层的C实现的，看了下代码，比较复杂，移植过来不容易。
+
+R的utils有个readClipboard函数，可以读取window的剪贴板。测试了下，确实可以(readClipboard(format = 8, raw = TRUE))，但返回的是字符，需要转成图片。找了相关资料，理论上应该是可以解决的，比如都42个字节描述了主要参数，后面就是颜色值了，但要实现这个解码过程还是比较复杂的。
+
+继续找了下其他md编辑器的实现方案，比如jupyter notebook、atom的markdown-image-paste等，它们的实现依赖clipboard.readImage(), 是Electron的方法。这个实现方式可能是最稳妥的，但我不太熟悉这块，只能放弃了。
+
+继续搜，发现了md-img-paste.vim, vim下的实现，应该是不依赖js的，看了下代码，果然
+```
+function! s:SaveFileTMPWin32(imgdir, tmpname) abort
+    let tmpfile = a:imgdir . '/' . a:tmpname . '.png'
+
+    let clip_command = "Add-Type -AssemblyName System.Windows.Forms;"
+    let clip_command .= "if ($([System.Windows.Forms.Clipboard]::ContainsImage())) {"
+    let clip_command .= "[System.Drawing.Bitmap][System.Windows.Forms.Clipboard]::GetDataObject().getimage().Save('"
+    let clip_command .= tmpfile ."', [System.Drawing.Imaging.ImageFormat]::Png) }"
+    let clip_command = "powershell -sta \"".clip_command. "\""
+
+    silent call system(clip_command)
+    if v:shell_error == 1
+        return 1
+    else
+        return tmpfile
+    endif
+endfunction
+
+function! s:SaveFileTMPMacOS(imgdir, tmpname) abort
+    let tmpfile = a:imgdir . '/' . a:tmpname . '.png'
+    let clip_command = 'osascript'
+    let clip_command .= ' -e "set png_data to the clipboard as «class PNGf»"'
+    let clip_command .= ' -e "set referenceNumber to open for access POSIX path of'
+    let clip_command .= ' (POSIX file \"' . tmpfile . '\") with write permission"'
+    let clip_command .= ' -e "write png_data to referenceNumber"'
+
+    silent call system(clip_command)
+    if v:shell_error == 1
+        return 1
+    else
+        return tmpfile
+    endif
+endfunction
+```
+
+这是vim自带的语言，虽然看不懂，但大概就是拼接脚本，在shell中执行。整理一下，window下大概是这样：
+```
+powershell -sta "
+  Add-Type -AssemblyName System.Windows.Forms;,
+  if ($([System.Windows.Forms.Clipboard]::ContainsImage())) {
+    [System.Drawing.Bitmap][System.Windows.Forms.Clipboard]::GetDataObject(
+      ).getimage().Save('test.png', [System.Drawing.Imaging.ImageFormat]::Png)
+  }
+```
+
+linux:
+```
+xclip -selection clipboard -t image/png -o > 'test.png'
+```
+
+到此为止，这个问题基本就解决了。打磨了下代码，提交PR, 希望能接受。
+
+
+## 其他
+
+- 代码见[RmdImgPaste](https://github.com/xiaoa6435/RmdImgPaste)
+- 安装和使用:
+    - devtools::install_github('xiaoa6435/RmdImgPaste')
+    - Rstudio中Tools->Modify key shortcuts -> Rmd-Img-Paste, 绑定快捷键，比如cmd + B
+    - cmd + B即可插入剪切板的图片（如果有）
+    - Rmd和blogdown下都可以
+  
+你想要的东西大概都会在某个角落，search it.
+  
