@@ -1,0 +1,37 @@
+baseurl = "/"
+theme = "hugo-theme-minos"
+languageCode = "en-us"
+title = "张振昊的个人博客"
+googleAnalytics = ""
+disqusShortname = ""
+hasCJKLanguage = true
+ignoreFiles = ["\\.Rmd$", "\\.Rmarkdown$", "_files$", "_cache$"]
+
+[permalinks]
+    post = "/:year/:month/:day/:slug/"
+[[menu.main]]
+    name = "Tags"
+    url = "/Tags/"
+    weight = 1
+[[menu.main]]
+    name = "Categories"
+    url = "/Categories/"
+    weight = 2
+[[menu.main]]
+    name = "About"
+    url = "/About/"
+    weight = 3
+        
+[params]
+    description = "张振昊的个人博客, 专注于因果推断、收益管理、定价等"
+
+    # options for highlight.js (version, additional languages, and theme)
+    highlightjsVersion = "9.12.0"
+    highlightjsCDN = "//cdnjs.cloudflare.com/ajax/libs"
+    highlightjsLang = ["r", "yaml"]
+    highlightjsTheme = "github"
+
+    MathJaxCDN = "//cdnjs.cloudflare.com/ajax/libs"
+    MathJaxVersion = "2.7.5"
+    noPostNavigation = true
+    smartToc = false
