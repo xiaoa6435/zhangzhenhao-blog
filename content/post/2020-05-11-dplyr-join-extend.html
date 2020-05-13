@@ -1,0 +1,184 @@
+---
+title: dplyr通用join的实现
+author: 张振昊
+date: '2020-05-11'
+slug: dplyr-join-extend
+categories:
+  - R
+tags:
+  - 算法
+  - join
+---
+
+
+
+<p>dplyr的join系列函数只支持相等连接。扩展join的issue在社区出现了好几次，现在都归到了<a href="https://github.com/tidyverse/dplyr/issues/2240">#2240</a>， 接口的形式基本定了，大致是这样:</p>
+<pre><code>left_join( 
+  events, days,
+  join_by(collector_id == collector_id, yearmonth &gt; gmonth + 3, event_timestamp &gt;= largest(day))
+)</code></pre>
+<p>遗留下来的主要是算法实现的问题。</p>
+<div id="通用join的类别" class="section level2">
+<h2>通用join的类别</h2>
+<p>join可以细分为以下几类：</p>
+<ol style="list-style-type: decimal">
+<li>相等连接，比如x.col1 = y.col1 and x.col2 = y.col2，多个条件的关系是and</li>
+<li>扩展的相等连接，比如x.col1 + 5 = y.col1 and x.col2 = y.col2，多个条件的关系是and</li>
+<li>不等连接，但左右都是独立的，只能&gt;, &gt;=, &lt;, &lt;= 这些关系，比如x.col1 + 5 &gt; y.col2 and x.col3 &lt; y.col3 - 1</li>
+<li>混合的相等连接，比如dist(x.lat, x.lng, y.lat, y.lng) = 1，</li>
+<li>不等连接，但连接左右是相关的，比如dist(x.lat, x.lng, y.lat, y.lng) &lt; 1, x和y不能分开为虚拟列</li>
+<li>rolling join可以理解为<strong>不等连接 + group_by + filter</strong></li>
+</ol>
+<p>rolling join有时候也叫theta join在日志数据处理中经常回出现，比如，我们想知道用户购买前最后一次浏览记录。</p>
+</div>
+<div id="join算法" class="section level2">
+<h2>join算法</h2>
+<p>join算法有三类:</p>
+<ul>
+<li>hash join: 对右表hash，左表直接去查，这个速度是很快的，但很显然只使用于相等连接（1、2），dplyr目前的实现就是类似这种</li>
+<li>sort merge join: 首先对左右分别排序，如果L.key = R.key, 输出相应的行，如果左边大于右边，右边往前走，如果左边小于右边，左边往前走: <img src="/post/2020-05-11-dplyr-join-extend_files/merge-join-algorithm.gif" /></li>
+</ul>
+<p>sort merge join也是支持不等连接，比较麻烦的是，怎么处理多条件，比如x.col1 + 5 &gt; y.col2 and x.col3 &lt; y.col3 - 1, 我能想到的分别对每个条件进行处理，再取交集。sort merge join可以处理相等连接、简单的不等连接（1、2、3）</p>
+<pre class="{c++}"><code>#include &lt;Rcpp.h&gt;
+#include &lt;iostream&gt;
+using namespace std;
+using namespace Rcpp;
+
+inline bool gt(double x, double y){
+  return (x &gt; y);
+}
+
+inline bool ge(double x, double y){
+  return (x &gt;= y);
+}
+
+inline bool lt(double x, double y){
+  return (x &lt; y);
+}
+
+inline bool le(double x, double y){
+  return (x &lt;= y);
+}
+
+// [[Rcpp::export]]
+List sort_merge_join(NumericVector r, NumericVector s, String cpr) {
+
+  int nl = r.size();
+  int nr = s.size();
+
+  int i = 0;
+  int j = 0;
+
+  std::vector&lt;int&gt; x_loc;
+  std::vector&lt;int&gt; y_loc;
+
+  bool (*compare)(double, double) = (cpr == &quot;&gt;&quot;)?gt:((cpr == &quot;&gt;=&quot;)?ge:(cpr == &quot;&lt;&quot;)?lt:le);
+  if (cpr == &quot;==&quot;) {
+    while (i &lt; nl &amp;&amp; j &lt; nr) {
+      if(r[i] == s[j]) {
+
+        // if have tie, cross join it
+        int j_rep = 0;
+        do {
+          j_rep = 0;
+          do {
+            x_loc.push_back(i + 1);
+            y_loc.push_back(j + 1);
+            j++;
+            j_rep++;
+          } while ((j &lt; nr) &amp;&amp; (s[j] == s[j - 1]));
+          j = j - j_rep;
+          i++;
+        } while ((i &lt; nl) &amp;&amp; (r[i] == r[i - 1]));
+
+      } else if(r[i] &gt; s[j]) {
+        j++;
+      } else {
+        i++;
+      }
+    }
+
+  } else if (cpr == &quot;&gt;=&quot; || cpr == &quot;&gt;&quot;) {
+
+    while (i &lt; nl) {
+      if (compare(r[i], s[j])) {
+        for (int k = 0; k &lt;= j; k++){
+          x_loc.push_back(i + 1);
+          y_loc.push_back(k + 1);
+        }
+        while(j + 1 &lt; nr &amp;&amp; compare(r[i], s[j + 1])){
+          j++;
+          x_loc.push_back(i + 1);
+          y_loc.push_back(j + 1);
+        }
+      }
+      i++;
+    }
+
+  } else {
+    while (j &lt; nr) {
+      if (compare(r[i], s[j])) {
+
+        for (int k = 0; k &lt;= i; k++){
+          x_loc.push_back(k + 1);
+          y_loc.push_back(j + 1);
+        }
+        while(i + 1 &lt; nr &amp;&amp; compare(r[i + 1], s[j])){
+          i++;
+          x_loc.push_back(i + 1);
+          y_loc.push_back(j + 1);
+        }
+      }
+      j++;
+    }
+  }
+
+  return List::create(
+    _[&quot;x_loc&quot;] = x_loc,
+    _[&quot;y_loc&quot;] = y_loc
+  );
+}</code></pre>
+<ul>
+<li>nest loop join: 这个最简单，两层循环，判断连接条件，当然也最通用了。这里比较麻烦的点在于，怎样高效的实现。即使用c++，也回涉及到c++调R的问题。比如，purrr的map就是c写的，然后调用R_eval, 速度并不比纯R快。</li>
+</ul>
+<pre class="r"><code>N &lt;- 1e4
+x &lt;- sample(1:N, N, replace = TRUE)
+f &lt;- function(x) {
+  res &lt;- list()
+  for (i in seq_along(x)) {
+    res[[i]] &lt;- x[i]^2
+  }
+  unlist(res)
+}
+bench::mark(
+  x^2,
+  f(x),
+  purrr::map_dbl(x, ~.^2),
+  check = FALSE,
+  iterations = 1
+)</code></pre>
+<pre><code>## Warning: Some expressions had a GC in every iteration; so filtering is disabled.</code></pre>
+<pre><code>## # A tibble: 3 x 6
+##   expression                   min   median `itr/sec` mem_alloc `gc/sec`
+##   &lt;bch:expr&gt;              &lt;bch:tm&gt; &lt;bch:tm&gt;     &lt;dbl&gt; &lt;bch:byt&gt;    &lt;dbl&gt;
+## 1 x^2                      20.38µs  20.38µs    49060.   78.17KB       0 
+## 2 f(x)                         3ms      3ms      334.    6.02MB       0 
+## 3 purrr::map_dbl(x, ~.^2)   9.77ms   9.77ms      102.  437.54KB     102.</code></pre>
+<p>现在的想法是扩展现有的join算法，实现通用join, 包括ineuqel join和rolling join。真正意义上的通用join可以理解为f(x_key, y_key)，返回True/False。要实现这种join，只能是nest loop算法，这会比较慢，但大部分情况下的join条件并不会太复杂，我们可以将其细分为一下几类：</p>
+<ul>
+<li>相等连接，比如x.col1 = y.col1 and x.col2 = y.col2，多个条件的关系是and</li>
+<li>扩展的相等连接，比如x.col1 + 5 = y.col1 and x.col2 = y.col2，多个条件的关系是and</li>
+<li>不等连接，但左右都是独立的，只能&gt;, &gt;=, &lt;, &lt;= 这些关系，比如x.col1 + 5 &gt; y.col2 and x.col3 &lt; y.col3 - 1</li>
+<li>不等连接，但连接左右是相关的，比如dist(x.lat, x.lng, y.lat, y.lng) &lt; 1, x和y不能分开为虚拟列</li>
+<li>rolling join可以理解为<strong>不等连接 + group_by + filter</strong></li>
+</ul>
+<p>对相等连接，可以采用hash join和sort merge join。左右独立的join也可以用sort merge join，对任意join，比如相等连接但包括or, 类似(x.col1 = y.col1 or x.col2 = y.col2), dist(x.lat, x.lng, y.lat, y.lng) &lt; 1等，只能用nest join</p>
+</div>
+<div id="join_by解析" class="section level2">
+<h2>join_by解析</h2>
+<p>join_by的参数是表达式，比如<code>join_by(collector_id == collector_id, yearmonth &gt; gmonth + 3, event_timestamp &gt;= largest(day))</code>，用起来回更方便， 编码的时候麻烦些，需要把等式两边分别在左右表中求值。</p>
+</div>
+<div id="其他" class="section level2">
+<h2>其他</h2>
+<p>join的实现还是比较复杂的，简单的实现意义很小。</p>
+</div>

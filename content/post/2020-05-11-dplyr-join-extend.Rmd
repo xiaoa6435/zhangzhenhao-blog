@@ -1,0 +1,236 @@
+---
+title: dplyr通用join的实现
+author: 张振昊
+date: '2020-05-11'
+slug: dplyr-join-extend
+categories:
+  - R
+tags:
+  - 算法
+  - join
+---
+
+dplyr的join系列函数只支持相等连接。扩展join的issue在社区出现了好几次，现在都归到了[#2240](https://github.com/tidyverse/dplyr/issues/2240)， 接口的形式基本定了，大致是这样:
+```
+left_join( 
+  events, days,
+  join_by(collector_id == collector_id, yearmonth > gmonth + 3, event_timestamp >= largest(day))
+)
+```
+遗留下来的主要是算法实现的问题。
+
+## 通用join的类别
+
+join可以细分为以下几类：
+
+1. 相等连接，比如x.col1 = y.col1 and x.col2 = y.col2，多个条件的关系是and
+2. 扩展的相等连接，比如x.col1 + 5 = y.col1 and x.col2 = y.col2，多个条件的关系是and
+3. 不等连接，但左右都是独立的，只能>, >=, <, <= 这些关系，比如x.col1 + 5 > y.col2 and x.col3 < y.col3 - 1
+4. 混合的相等连接，比如dist(x.lat, x.lng, y.lat, y.lng) = 1，
+5. 不等连接，但连接左右是相关的，比如dist(x.lat, x.lng, y.lat, y.lng) < 1, x和y不能分开为虚拟列
+6. rolling join可以理解为**不等连接 + group_by + filter**
+
+rolling join有时候也叫theta join在日志数据处理中经常回出现，比如，我们想知道用户购买前最后一次浏览记录。
+
+## join算法
+
+join算法有三类: 
+
+- hash join: 对右表hash，左表直接去查，这个速度是很快的，但很显然只使用于相等连接（1、2），dplyr目前的实现就是类似这种
+- sort merge join: 首先对左右分别排序，如果L.key = R.key, 输出相应的行，如果左边大于右边，右边往前走，如果左边小于右边，左边往前走:
+  ![](/post/2020-05-11-dplyr-join-extend_files/merge-join-algorithm.gif)
+  
+  sort merge join也是支持不等连接，比较麻烦的是，怎么处理多条件，比如x.col1 + 5 > y.col2 and x.col3 < y.col3 - 1, 我能想到的分别对每个条件进行处理，再取交集。sort merge join可以处理相等连接、简单的不等连接（1、2、3）
+```{c++}
+#include <Rcpp.h>
+#include <iostream>
+using namespace std;
+using namespace Rcpp;
+
+inline bool gt(double x, double y){
+  return (x > y);
+}
+
+inline bool ge(double x, double y){
+  return (x >= y);
+}
+
+inline bool lt(double x, double y){
+  return (x < y);
+}
+
+inline bool le(double x, double y){
+  return (x <= y);
+}
+
+// [[Rcpp::export]]
+List sort_merge_join(NumericVector r, NumericVector s, String cpr) {
+
+  int nl = r.size();
+  int nr = s.size();
+
+  int i = 0;
+  int j = 0;
+
+  std::vector<int> x_loc;
+  std::vector<int> y_loc;
+
+  bool (*compare)(double, double) = (cpr == ">")?gt:((cpr == ">=")?ge:(cpr == "<")?lt:le);
+  if (cpr == "==") {
+    while (i < nl && j < nr) {
+      if(r[i] == s[j]) {
+
+        // if have tie, cross join it
+        int j_rep = 0;
+        do {
+          j_rep = 0;
+          do {
+            x_loc.push_back(i + 1);
+            y_loc.push_back(j + 1);
+            j++;
+            j_rep++;
+          } while ((j < nr) && (s[j] == s[j - 1]));
+          j = j - j_rep;
+          i++;
+        } while ((i < nl) && (r[i] == r[i - 1]));
+
+      } else if(r[i] > s[j]) {
+        j++;
+      } else {
+        i++;
+      }
+    }
+
+  } else if (cpr == ">=" || cpr == ">") {
+
+    while (i < nl) {
+      if (compare(r[i], s[j])) {
+        for (int k = 0; k <= j; k++){
+          x_loc.push_back(i + 1);
+          y_loc.push_back(k + 1);
+        }
+        while(j + 1 < nr && compare(r[i], s[j + 1])){
+          j++;
+          x_loc.push_back(i + 1);
+          y_loc.push_back(j + 1);
+        }
+      }
+      i++;
+    }
+
+  } else {
+    while (j < nr) {
+      if (compare(r[i], s[j])) {
+
+        for (int k = 0; k <= i; k++){
+          x_loc.push_back(k + 1);
+          y_loc.push_back(j + 1);
+        }
+        while(i + 1 < nr && compare(r[i + 1], s[j])){
+          i++;
+          x_loc.push_back(i + 1);
+          y_loc.push_back(j + 1);
+        }
+      }
+      j++;
+    }
+  }
+
+  return List::create(
+    _["x_loc"] = x_loc,
+    _["y_loc"] = y_loc
+  );
+}
+```
+
+- nest loop join: 这个最简单，两层循环，判断连接条件，当然也最通用了。这里比较麻烦的点在于，怎样高效的实现。即使用c++，也回涉及到c++调R的问题。比如，purrr的map就是c写的，然后调用R_eval, 速度并不比纯R快。
+
+```{r}
+N <- 1e4
+x <- sample(1:N, N, replace = TRUE)
+f <- function(x) {
+  res <- list()
+  for (i in seq_along(x)) {
+    res[[i]] <- x[i]^2
+  }
+  unlist(res)
+}
+bench::mark(
+  x^2,
+  f(x),
+  purrr::map_dbl(x, ~.^2),
+  check = FALSE,
+  iterations = 1
+)
+```
+
+
+现在的想法是扩展现有的join算法，实现通用join, 包括ineuqel join和rolling join。真正意义上的通用join可以理解为f(x_key, y_key)，返回True/False。要实现这种join，只能是nest loop算法，这会比较慢，但大部分情况下的join条件并不会太复杂，我们可以将其细分为一下几类：
+
+- 相等连接，比如x.col1 = y.col1 and x.col2 = y.col2，多个条件的关系是and
+- 扩展的相等连接，比如x.col1 + 5 = y.col1 and x.col2 = y.col2，多个条件的关系是and
+- 不等连接，但左右都是独立的，只能>, >=, <, <= 这些关系，比如x.col1 + 5 > y.col2 and x.col3 < y.col3 - 1
+- 不等连接，但连接左右是相关的，比如dist(x.lat, x.lng, y.lat, y.lng) < 1, x和y不能分开为虚拟列
+- rolling join可以理解为**不等连接 + group_by + filter**
+
+对相等连接，可以采用hash join和sort merge join。左右独立的join也可以用sort merge join，对任意join，比如相等连接但包括or, 类似(x.col1 = y.col1 or x.col2 = y.col2), dist(x.lat, x.lng, y.lat, y.lng) < 1等，只能用nest join
+
+## join_by解析
+
+join_by的参数是表达式，比如`join_by(collector_id == collector_id, yearmonth > gmonth + 3, event_timestamp >= largest(day))`，用起来回更方便， 编码的时候麻烦些，需要把等式两边分别在左右表中求值。
+
+## inequel join的简单实现
+
+不考虑性能问题，inequel join可以理解为cross_join + filter, 另外处理一下左右连接的问题。
+
+```{r}
+join_mutate_native <- function(x, y, by, type,
+                               suffix = c(".x", ".y"),
+                               na_matches = "na",
+                               keep = FALSE,
+                               ...
+                               ) {
+  out <- x %>% 
+    inner_join(y, by = character(), suffix = suffix, na_matches = na_matches, keep = keep) %>% 
+    filter(...)
+  
+  l_extra <- integer()
+  r_extra <- integer()
+  if (type == 'left' || type == 'full') {
+    l_extra <- seq_len(nrow(x))[!vec_in(x, out[colnames(x)])]
+  }
+  if (type == 'right' || type == 'full') {
+    r_extra <- seq_len(nrow(y))[!vec_in(y, out[colnames(y)])]
+  } 
+  
+  x_extra <- vec_c(l_extra, rep(NA_integer_, length(r_extra)))
+  y_extra <- vec_c(rep(NA_integer_, length(l_extra)), r_extra)
+  
+  extra <- vec_cbind(vec_slice(x, x_extra), vec_slice(y, y_extra))
+  vec_rbind(out, extra)
+}
+
+x <- tibble(
+  id_1.x = c(1, 2, 1, 5),
+  id_2.x = c(1, 3, 4, 4)
+)
+y <- tibble(
+  id_1.y = c(1, 4, 1, 5),
+  id_2.y = c(1, 3, 4, 3)
+)
+
+join_mutate_native(x, y, by = NULL, 'inner', 
+                   suffix = c(".x", ".y"),
+                   na_matches = "na",
+                   keep = FALSE,
+                   id_1.x == id_1.y, id_2.x > id_2.y
+                   )
+# join_mutate_native(x, y, 'left',  by = exprs(id_1.x == id_1.y, id_2.x > id_2.y))
+# join_mutate_native(x, y, 'right', by = exprs(id_1.x == id_1.y, id_2.x > id_2.y))
+# join_mutate_native(x, y, 'full',  by = exprs(id_1.x == id_1.y, id_2.x > id_2.y))
+```
+
+## 其他
+
+join的实现还是比较复杂的，简单的实现意义很小。
+
