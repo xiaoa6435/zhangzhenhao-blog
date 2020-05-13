@@ -183,7 +183,7 @@ join_by的参数是表达式，比如`join_by(collector_id == collector_id, year
 
 不考虑性能问题，inequel join可以理解为cross_join + filter, 另外处理一下左右连接的问题。
 
-```{r}
+```{r, eval = FALSE}
 join_mutate_native <- function(x, y, by, type,
                                suffix = c(".x", ".y"),
                                na_matches = "na",
@@ -232,5 +232,5 @@ join_mutate_native(x, y, by = NULL, 'inner',
 
 ## 其他
 
-join的实现还是比较复杂的，简单的实现意义很小。
+join的实现还是比较复杂的，简单的实现意义很小，完整有效的实现更类似于sql引擎的优化了。
 

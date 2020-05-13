@@ -161,9 +161,9 @@ bench::mark(
 <pre><code>## # A tibble: 3 x 6
 ##   expression                   min   median `itr/sec` mem_alloc `gc/sec`
 ##   &lt;bch:expr&gt;              &lt;bch:tm&gt; &lt;bch:tm&gt;     &lt;dbl&gt; &lt;bch:byt&gt;    &lt;dbl&gt;
-## 1 x^2                      20.38µs  20.38µs    49060.   78.17KB       0 
-## 2 f(x)                         3ms      3ms      334.    6.02MB       0 
-## 3 purrr::map_dbl(x, ~.^2)   9.77ms   9.77ms      102.  437.54KB     102.</code></pre>
+## 1 x^2                      19.42µs  19.42µs   51496.    78.17KB      0  
+## 2 f(x)                      2.94ms   2.94ms     340.     6.02MB      0  
+## 3 purrr::map_dbl(x, ~.^2)  10.05ms  10.05ms      99.5  437.54KB     99.5</code></pre>
 <p>现在的想法是扩展现有的join算法，实现通用join, 包括ineuqel join和rolling join。真正意义上的通用join可以理解为f(x_key, y_key)，返回True/False。要实现这种join，只能是nest loop算法，这会比较慢，但大部分情况下的join条件并不会太复杂，我们可以将其细分为一下几类：</p>
 <ul>
 <li>相等连接，比如x.col1 = y.col1 and x.col2 = y.col2，多个条件的关系是and</li>
@@ -178,7 +178,55 @@ bench::mark(
 <h2>join_by解析</h2>
 <p>join_by的参数是表达式，比如<code>join_by(collector_id == collector_id, yearmonth &gt; gmonth + 3, event_timestamp &gt;= largest(day))</code>，用起来回更方便， 编码的时候麻烦些，需要把等式两边分别在左右表中求值。</p>
 </div>
+<div id="inequel-join的简单实现" class="section level2">
+<h2>inequel join的简单实现</h2>
+<p>不考虑性能问题，inequel join可以理解为cross_join + filter, 另外处理一下左右连接的问题。</p>
+<pre class="r"><code>join_mutate_native &lt;- function(x, y, by, type,
+                               suffix = c(&quot;.x&quot;, &quot;.y&quot;),
+                               na_matches = &quot;na&quot;,
+                               keep = FALSE,
+                               ...
+                               ) {
+  out &lt;- x %&gt;% 
+    inner_join(y, by = character(), suffix = suffix, na_matches = na_matches, keep = keep) %&gt;% 
+    filter(...)
+  
+  l_extra &lt;- integer()
+  r_extra &lt;- integer()
+  if (type == &#39;left&#39; || type == &#39;full&#39;) {
+    l_extra &lt;- seq_len(nrow(x))[!vec_in(x, out[colnames(x)])]
+  }
+  if (type == &#39;right&#39; || type == &#39;full&#39;) {
+    r_extra &lt;- seq_len(nrow(y))[!vec_in(y, out[colnames(y)])]
+  } 
+  
+  x_extra &lt;- vec_c(l_extra, rep(NA_integer_, length(r_extra)))
+  y_extra &lt;- vec_c(rep(NA_integer_, length(l_extra)), r_extra)
+  
+  extra &lt;- vec_cbind(vec_slice(x, x_extra), vec_slice(y, y_extra))
+  vec_rbind(out, extra)
+}
+
+x &lt;- tibble(
+  id_1.x = c(1, 2, 1, 5),
+  id_2.x = c(1, 3, 4, 4)
+)
+y &lt;- tibble(
+  id_1.y = c(1, 4, 1, 5),
+  id_2.y = c(1, 3, 4, 3)
+)
+
+join_mutate_native(x, y, by = NULL, &#39;inner&#39;, 
+                   suffix = c(&quot;.x&quot;, &quot;.y&quot;),
+                   na_matches = &quot;na&quot;,
+                   keep = FALSE,
+                   id_1.x == id_1.y, id_2.x &gt; id_2.y
+                   )
+# join_mutate_native(x, y, &#39;left&#39;,  by = exprs(id_1.x == id_1.y, id_2.x &gt; id_2.y))
+# join_mutate_native(x, y, &#39;right&#39;, by = exprs(id_1.x == id_1.y, id_2.x &gt; id_2.y))
+# join_mutate_native(x, y, &#39;full&#39;,  by = exprs(id_1.x == id_1.y, id_2.x &gt; id_2.y))</code></pre>
+</div>
 <div id="其他" class="section level2">
 <h2>其他</h2>
-<p>join的实现还是比较复杂的，简单的实现意义很小。</p>
+<p>join的实现还是比较复杂的，简单的实现意义很小，完整有效的实现更类似于sql引擎的优化了。</p>
 </div>
