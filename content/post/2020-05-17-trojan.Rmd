@@ -1,0 +1,74 @@
+---
+title: Trojan配置
+author: 张振昊
+date: '2020-05-17'
+slug: trojan
+categories:
+  - Other
+tags:
+  - Other
+---
+
+
+acme, 采用standalone模式（我的网站在netlify上，不在gcp）
+```
+sudo su
+curl https://get.acme.sh | sh
+~/.acme.sh/acme.sh --issue -d sw.willalake.site --standalone -k ec-256--force
+```
+
+trojan配置
+```
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/trojan-gfw/trojan-quickstart/master/trojan-quickstar
+t.sh)"
+sudo vim /usr/local/etc/trojan/config.json
+```
+
+需要改的主要是：
+
+- password
+- cert
+- key
+
+remote_addr和remote_port好像并不起作用, 用nginx处理, 处理后，浏览器打开时调整到willalake.site
+```
+sudo apt install nginx -y
+
+# 删除默认配置文件，只留conf.d目录下配置文件
+sudo rm -rf /etc/nginx/sites-available/
+sudo rm -rf /etc/nginx/sites-enabled/
+sudo rm -rf /etc/nginx/conf.d/default.conf
+sudo touch /etc/nginx/conf.d/trojan.conf
+sudo vim /etc/nginx/conf.d/trojan.conf
+
+# trojan.conf
+server {
+    listen 127.0.0.1:80; #放在Trojan后面即可做伪装也可以是真正的网站
+    server_name sw.willalake.site; # 申请的域名，例如betterme.xin www.betterme.xin
+    location / {
+      proxy_pass https://willalake.site;
+    	root /usr/share/nginx/html/; #默认的根目录
+        index index.html; #默认的html文件
+        }
+	add_header Strict-Transport-Security "max-age=63072000; includeSubDomains; preload" always; #HSTS标头
+}
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name example.com;
+    return 301 https://sw.willalake.site; #301 https重定向
+}
+
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    server_name _;
+    return 444;
+}
+
+```
+
+
+
+

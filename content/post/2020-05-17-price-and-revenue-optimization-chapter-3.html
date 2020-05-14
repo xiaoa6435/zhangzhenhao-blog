@@ -1,0 +1,77 @@
+---
+title: 定价与收益优化-第三章-基本的价格优化
+author: 张振昊
+date: '2020-05-17'
+slug: price-and-revenue-optimization-chapter-3
+categories:
+  - 读书笔记
+tags:
+  - 定价
+katex: true
+---
+
+
+
+<p>基础的定价和收益优化可以表述为优化问题，其目标在于最大化利润。这里最关键的两个因素是价格反应函数和增量成本。</p>
+<div id="价格反应函数" class="section level2">
+<h2>价格反应函数</h2>
+<p>价格反应函数，或价格反应曲线说明需求作为价格的函数是怎样变化的，类似于市场需求曲线，但存在一个重要区别：价格反应函数说明了单个销售商的需求受价格的影响，后者一般是整个市场的需求。在同一市场竞争的不同企业，可能有不同的价格反应函数。</p>
+<p>大多数情况下，我们考虑的价格反应函数，都变现出一定程度的平滑价格反应。经济学中通常 <img src="/post/2020-05-17-price-and-revenue-optimization-chapter-3_files/rmd-img-paste-2020051810241589768652.png" /> 称为<strong>垄断的需求曲线</strong></p>
+<div id="价格反应函数的性质" class="section level3">
+<h3>价格反应函数的性质</h3>
+<p>定价和收益优化中的价格反应函数都是针对一定时间段的：短期和长期的价格反应函数可能有很大区别。一般认为价格反应函数有一下特点：非负、连续、可微和向下倾斜。</p>
+</div>
+<div id="价格敏感性的度量" class="section level3">
+<h3>价格敏感性的度量</h3>
+<p>价格曲线的斜率或价格弹性可以度量价格敏感性</p>
+<ul>
+<li>讨论弹性时需要明确区分<strong>市场整体弹性</strong>和<strong>单个供应商的弹性</strong>，一般前者小于后者</li>
+<li>价格弹性取决于时间。一般而言，短期弹性小于长期弹性，比如汽油等；对耐用品，比如家电，短期弹性大于长期弹性 <img src="/post/2020-05-17-price-and-revenue-optimization-chapter-3_files/rmd-img-paste-2020051810411589769677.png" /></li>
+</ul>
+</div>
+<div id="价格反应与支付意愿" class="section level3">
+<h3>价格反应与支付意愿</h3>
+<p>需求可以视为潜在顾客独立购买的结果。潜在顾客会观察价格，决定是购买我们的产品，还是竞品的，或者干脆不买了。一般情况下，我们不能直接跟踪潜在用户的决策，但理解构成价格反应函数的顾客行为假设是值得的，这可以帮助判断价格反应函数是否建立在恰当的假设上。顾客行为模型以支付意愿（willingness pay）为基础。</p>
+<p>支付意愿方法假设每个潜在顾客为没够产品或服务都有一个最大支付意愿（reservation price, w.t.p）。定义w(x)为总体的w.t.p分布，对任意的0 &lt;= <span class="math inline">\(p_1\)</span> &lt;= <span class="math inline">\(p_2\)</span>的值有:</p>
+<p><span class="math display">\[\int_{p_1}^{p_2}w(x)dx = 总体中w.t.p. 在p_1和p_2之间的部分\]</span> <img src="/post/2020-05-17-price-and-revenue-optimization-chapter-3_files/rmd-img-paste-2020051815051589785543.png" /></p>
+<p>支付意愿公式的好处在于它将价格反应函数分成总需求D和支付意愿分布(w(x))</p>
+</div>
+<div id="常见的价格反应函数" class="section level3">
+<h3>常见的价格反应函数</h3>
+<ul>
+<li>常斜率线性价格反应函数: <em>d(p) = D - mp</em>
+<ul>
+<li>均匀分布的支付意愿</li>
+<li>数学上简单易处理</li>
+<li>不能真实全局的反映价格反应：一般预期价格在非常接近竞品价格处反应最激烈</li>
+</ul></li>
+<li>常弹性: <span class="math inline">\(d^{&#39;}\)</span>(p) / d(p) = -<span class="math inline">\(\epsilon\)</span>
+<ul>
+<li>支付意愿高度集中在0处</li>
+<li>不能真实全局的反映价格反应</li>
+</ul></li>
+<li>Logit(倒S型)：<span class="math inline">\(d(p) = \frac{Ce^{-(a+bp)}}{1 + e^{-(a+bp)}}\)</span>
+<ul>
+<li>一般定义a &gt; 0, C表示整体市场规模，b表示价格敏感性，<em>p = - (a / )</em>上价格最敏感，是近似的“市场价格”</li>
+<li>支付意愿是钟形分布</li>
+</ul></li>
+</ul>
+</div>
+</div>
+<div id="考虑竞争的价格反应" class="section level2">
+<h2>考虑竞争的价格反应</h2>
+<ul>
+<li>在价格反应函数中引入竞争：一般估计价格反应是给予历史数据的，这里已经包括了典型的竞争定价</li>
+<li>顾客选择建模：</li>
+<li>预估竞争反应：定价和收益优化就是针对竞品当前行为的最佳反应</li>
+</ul>
+</div>
+<div id="基本的价格优化问题" class="section level2">
+<h2>基本的价格优化问题</h2>
+<p>利润是<strong>售出和增量成本（边际成本）的差额</strong>。 <span class="math inline">\(\max \limits_{p}\{(p - c)d(p)\}\)</span></p>
+<p>最优价格：<span class="math inline">\(d(p^*) = -d^{&#39;}(p^*)(p^* - c)\)</span>, 其满足</p>
+<ul>
+<li>边际价格等于边际成本</li>
+<li>价格弹性等于边际利润率的倒数：从这里可以推测出当前定价可信度的“真实测度”</li>
+</ul>
+</div>

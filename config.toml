@@ -35,6 +35,7 @@ ignoreFiles = ["\\.Rmd$", "\\.Rmarkdown$", "_files$", "_cache$"]
     MathJaxVersion = "2.7.5"
     noPostNavigation = true
     smartToc = false
+    katex = true
     
 [params.utterances]
     enable = true
