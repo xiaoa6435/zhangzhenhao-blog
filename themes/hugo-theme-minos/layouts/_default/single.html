@@ -5,12 +5,16 @@
     {{ partial "header.html" . }}
     <section id="main" class="outer">
         {{ partial "article.html" . }}
-        {{ if and (not .Params.nocomment) .Site.DisqusShortname }}
-            {{ template "_internal/disqus.html" . }}
+        {{ if and (not .Params.nocomment) .Site.DisqusShortname }} 
+            {{ template "_internal/disqus.html" . }} 
         {{ end }}
+        
+        {{ if and (not .Params.nocomment) .Site.Params.utterances.enable }} 
+            {{ partial "comments.html" . }}
+        {{ end }}
+        
     </section>
-    <!-- Comments -->
-    {{ partial "comments.html" . }}
+    
     {{ partial "footer.html" . }}
 </div>
 </body>

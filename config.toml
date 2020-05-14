@@ -36,8 +36,9 @@ ignoreFiles = ["\\.Rmd$", "\\.Rmarkdown$", "_files$", "_cache$"]
     noPostNavigation = true
     smartToc = false
     
-[params.utteranc]
+[params.utterances]
     enable = true
-    repo = "xiaoa6435/blog-comment"
+    owner = "xiaoa6435"
+    repo = "blog-comment"
     issueTerm = "pathname"
     theme = "github-light"
