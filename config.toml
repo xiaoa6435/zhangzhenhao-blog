@@ -35,3 +35,9 @@ ignoreFiles = ["\\.Rmd$", "\\.Rmarkdown$", "_files$", "_cache$"]
     MathJaxVersion = "2.7.5"
     noPostNavigation = true
     smartToc = false
+    
+[params.utteranc]
+    enable = true
+    repo = "xiaoa6435/blog-comment"
+    issueTerm = "pathname"
+    theme = "github-light"
